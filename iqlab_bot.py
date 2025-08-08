@@ -1,122 +1,157 @@
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telebot import types
 from datetime import datetime, timedelta
 
 TOKEN = '8207596553:AAH8wcoqshmnUwS1Zrq_rL3e_LnrLPnW6mg'
-ADMIN_CHAT_ID = '1002738907591'  # Telegram ID администратора
+CHANNEL_ID = -1002738907591  # Встав сюди свій канал/чат ID
 
 bot = telebot.TeleBot(TOKEN)
 
-user_state = {}
-user_selection = {}
-
-OFFICE_INFO = """
-🏥 *Медичний офіс*
-📍 Дніпропетровська область, м. Підгородне
-📌 вул. Центральна, 43б
-
-🕒 *Час роботи:*
-ПН-ПТ: 7:00 - 13:00  
-Забір біоматеріалу: 7:00 - 11:00
-
-СБ: 8:00 - 13:00  
-Забір біоматеріалу: 8:00 - 11:00
-
-НД: Вихідний
-"""
-
-# 🔽 Категории и анализы вручную
-CATEGORIES = {
-    "Загальний аналіз крові": [
-        {"name": "ЗАК (Загальний аналіз крові)", "term": "1 день", "price": "150 грн"},
-        {"name": "Гемоглобін", "term": "1 день", "price": "100 грн"},
-    ],
-    "Біохімія": [
-        {"name": "Глюкоза", "term": "1 день", "price": "120 грн"},
-        {"name": "АСТ", "term": "1 день", "price": "130 грн"},
-        {"name": "АЛТ", "term": "1 день", "price": "130 грн"},
-    ],
-    "Гормони": [
-        {"name": "ТСГ (Тиреотропний гормон)", "term": "2 дні", "price": "220 грн"},
-        {"name": "Т3 вільний", "term": "2 дні", "price": "240 грн"},
-        {"name": "Т4 вільний", "term": "2 дні", "price": "240 грн"},
-    ],
-    "Сеча": [
-        {"name": "Загальний аналіз сечі", "term": "1 день", "price": "100 грн"},
-        {"name": "Добова білок у сечі", "term": "2 дні", "price": "150 грн"},
-    ],
-    "Інфекції": [
-        {"name": "Гепатит B (HBsAg)", "term": "2 дні", "price": "300 грн"},
-        {"name": "Гепатит C (anti-HCV)", "term": "2 дні", "price": "300 грн"},
-    ]
+# Структура категорій і аналізів
+categories = {
+    "Загальні аналізи": ["Загальний аналіз крові", "Загальний аналіз сечі"],
+    "Біохімія": ["Білірубін", "Глюкоза", "Холестерин"],
+    "Інфекції": ["Гепатит B", "Гепатит C", "ВІЛ"],
 }
 
-def kb(items):
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for item in items:
-        markup.add(KeyboardButton(item))
+user_data = {}
+queue_number = 0  # Номер черги
+
+def get_date_buttons():
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    for i in range(7):
+        date = datetime.now() + timedelta(days=i)
+        btn = types.InlineKeyboardButton(date.strftime("%d-%m-%Y"), callback_data=f"date_{date.strftime('%Y-%m-%d')}")
+        markup.add(btn)
     return markup
 
 @bot.message_handler(commands=['start'])
-def start(m):
-    uid = m.chat.id
-    user_state[uid] = 'cat'
-    user_selection[uid] = {'tests': []}
-    categories = list(CATEGORIES.keys())
-    user_selection[uid]['cats'] = categories
-    bot.send_message(uid, "👋 Вітаємо у Telegram-боті лабораторії!")
-    bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
-    bot.send_message(uid, "🔽 Оберіть категорію:", reply_markup=kb(categories))
+def start(message):
+    user_id = message.from_user.id
+    user_data[user_id] = {"step": "category"}
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for cat in categories.keys():
+        markup.add(types.KeyboardButton(cat))
+    bot.send_message(user_id, "Виберіть категорію аналізів:", reply_markup=markup)
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id) == 'cat')
-def cat(m):
-    uid = m.chat.id
-    if m.text not in CATEGORIES:
-        return bot.send_message(uid, "❗ Будь ласка, оберіть категорію зі списку.")
-    user_selection[uid]['cat'] = m.text
-    tests = CATEGORIES[m.text]
-    user_selection[uid]['all_tests'] = tests
-    user_state[uid] = 'test'
-    bot.send_message(uid, "🧪 Оберіть аналіз (по одному). Коли закінчите — натисніть 'Готово'", reply_markup=kb([t['name'] for t in tests] + ['Готово']))
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    user_id = message.from_user.id
+    text = message.text
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id) == 'test')
-def test(m):
-    uid = m.chat.id
-    if m.text == 'Готово':
-        if not user_selection[uid]['tests']:
-            return bot.send_message(uid, "⚠️ Оберіть хоча б один аналіз.")
-        user_state[uid] = 'date'
-        today = datetime.today()
-        dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(30)]
-        return bot.send_message(uid, "📅 Оберіть дату відвідування:", reply_markup=kb(dates))
-    test = next((t for t in user_selection[uid]['all_tests'] if t['name'] == m.text), None)
-    if test and test not in user_selection[uid]['tests']:
-        user_selection[uid]['tests'].append(test)
-        bot.send_message(uid, f"✅ Додано: {test['name']}")
-    else:
-        bot.send_message(uid, "🧪 Оберіть аналіз із запропонованих або натисніть 'Готово'.")
+    if user_id not in user_data:
+        bot.send_message(user_id, "Натисніть /start для початку.")
+        return
 
-@bot.message_handler(func=lambda m: user_state.get(m.chat.id) == 'date')
-def date(m):
-    uid = m.chat.id
-    try:
-        d = datetime.strptime(m.text, '%Y-%m-%d').date()
-        if d > datetime.today().date() + timedelta(days=30):
-            raise ValueError
-    except:
-        return bot.send_message(uid, "❌ Некоректна дата. Введіть дату у форматі YYYY-MM-DD.")
-    user_selection[uid]['date'] = d
-    tests = user_selection[uid]['tests']
-    msg = "\n".join([f"- {t['name']} (Срок: {t['term']}, Ціна: {t['price']})" for t in tests])
-    date_str = d.strftime('%Y-%m-%d')
-    final = f"🗓 *Запис на {date_str}*\n{msg}"
-    bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
-    bot.send_message(uid, final, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
-    user = m.from_user
-    admin_msg = f"📥 Нова заявка:\n👤 {user.first_name} (@{user.username or '—'})\n📅 {date_str}\n{msg}"
-    bot.send_message(ADMIN_CHAT_ID, admin_msg)
-    user_state.pop(uid)
-    user_selection.pop(uid)
+    step = user_data[user_id].get("step")
+
+    if step == "category":
+        if text not in categories:
+            bot.send_message(user_id, "Оберіть категорію з кнопок.")
+            return
+        user_data[user_id]["category"] = text
+        user_data[user_id]["step"] = "analysis"
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        for analysis in categories[text]:
+            markup.add(types.KeyboardButton(analysis))
+        markup.add(types.KeyboardButton("Назад"))
+        bot.send_message(user_id, "Оберіть аналіз:", reply_markup=markup)
+
+    elif step == "analysis":
+        if text == "Назад":
+            user_data[user_id]["step"] = "category"
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            for cat in categories.keys():
+                markup.add(types.KeyboardButton(cat))
+            bot.send_message(user_id, "Виберіть категорію аналізів:", reply_markup=markup)
+            return
+
+        category = user_data[user_id].get("category")
+        if category is None or text not in categories[category]:
+            bot.send_message(user_id, "Оберіть аналіз з кнопок.")
+            return
+        user_data[user_id]["analysis"] = text
+        user_data[user_id]["step"] = "date"
+        bot.send_message(user_id, "Оберіть дату відвідування:", reply_markup=get_date_buttons())
+
+    elif step == "confirmed":
+        bot.send_message(user_id, "Ви вже записані. Якщо хочете записатися знову, натисніть /start")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("date_"))
+def handle_date(call):
+    user_id = call.from_user.id
+    if user_id not in user_data or user_data[user_id].get("step") != "date":
+        bot.answer_callback_query(call.id, "Будь ласка, почніть запис командою /start")
+        return
+
+    date_str = call.data[5:]  # 'YYYY-MM-DD'
+    user_data[user_id]["date"] = date_str
+    user_data[user_id]["step"] = "confirm"
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("Готово"))
+    markup.add(types.KeyboardButton("Назад"))
+
+    summary = (
+        f"Підтвердіть запис:\n"
+        f"Категорія: {user_data[user_id]['category']}\n"
+        f"Аналіз: {user_data[user_id]['analysis']}\n"
+        f"Дата: {date_str}\n\n"
+        f"Натисніть 'Готово' для підтвердження або 'Назад' для редагування."
+    )
+
+    bot.send_message(user_id, summary, reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+@bot.message_handler(func=lambda message: True)
+def handle_confirm(message):
+    user_id = message.from_user.id
+    text = message.text
+
+    if user_id not in user_data:
+        bot.send_message(user_id, "Натисніть /start для початку.")
+        return
+
+    step = user_data[user_id].get("step")
+    if step != "confirm":
+        return  # Ігноруємо повідомлення на інших кроках
+
+    if text == "Назад":
+        user_data[user_id]["step"] = "date"
+        bot.send_message(user_id, "Оберіть дату відвідування:", reply_markup=get_date_buttons())
+        return
+
+    if text == "Готово":
+        global queue_number
+        queue_number += 1
+
+        user_data[user_id]["step"] = "confirmed"
+        user_data[user_id]["queue_number"] = queue_number
+
+        confirmation = (
+            f"Ви успішно записані!\n"
+            f"Ваш номер у черзі: {queue_number}\n"
+            f"Категорія: {user_data[user_id]['category']}\n"
+            f"Аналіз: {user_data[user_id]['analysis']}\n"
+            f"Дата: {user_data[user_id]['date']}"
+        )
+
+        bot.send_message(user_id, confirmation, reply_markup=types.ReplyKeyboardRemove())
+
+        # Відправка в канал
+        text_to_channel = (
+            f"Нова запис на аналізи:\n"
+            f"Користувач: @{message.from_user.username if message.from_user.username else message.from_user.first_name}\n"
+            f"Номер у черзі: {queue_number}\n"
+            f"Категорія: {user_data[user_id]['category']}\n"
+            f"Аналіз: {user_data[user_id]['analysis']}\n"
+            f"Дата: {user_data[user_id]['date']}"
+        )
+        bot.send_message(CHANNEL_ID, text_to_channel)
+
+        return
+
+    bot.send_message(user_id, "Будь ласка, натисніть 'Готово' або 'Назад'.")
 
 bot.polling()
 
