@@ -2,8 +2,8 @@ import telebot
 from telebot import types
 from datetime import datetime, timedelta
 
-API_TOKEN = 'ТВОЙ_ТОКЕН_ТУТ'
-CHANNEL_ID = '@твій_канал_або_chat_id'  # куда пересылать запись
+API_TOKEN = '8207596553:AAH8wcoqshmnUwS1Zrq_rL3e_LnrLPnW6mg'
+CHANNEL_ID = '1002738907591'  # куда пересылать запись
 
 bot = telebot.TeleBot(API_TOKEN)
 
