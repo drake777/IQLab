@@ -1,15 +1,12 @@
 import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
 TOKEN = '8207596553:AAH8wcoqshmnUwS1Zrq_rL3e_LnrLPnW6mg'
-ADMIN_CHAT_ID = '1002738907591'  # Замените на свой Telegram ID
+ADMIN_CHAT_ID = '1002738907591'  # Telegram ID администратора
 
 bot = telebot.TeleBot(TOKEN)
 
-BASE_URL = 'https://iqlab.com.ua/catalog'
 user_state = {}
 user_selection = {}
 
@@ -28,37 +25,31 @@ OFFICE_INFO = """
 НД: Вихідний
 """
 
-def get_categories():
-    r = requests.get(BASE_URL)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    categories = []
-
-    for link in soup.select('a.catalog-section__link'):
-        name = link.get_text(strip=True)
-        href = link.get('href')
-        if name and href:
-            categories.append({
-                'name': name,
-                'url': 'https://iqlab.com.ua' + href
-            })
-
-    return categories
-
-
-def get_tests(url):
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    rows = soup.select('table.table > tbody > tr')
-    tests = []
-    for row in rows:
-        cols = row.find_all('td')
-        if len(cols) >= 3:
-            tests.append({
-                'name': cols[0].text.strip(),
-                'term': cols[1].text.strip(),
-                'price': cols[2].text.strip()
-            })
-    return tests
+# 🔽 Категории и анализы вручную
+CATEGORIES = {
+    "Загальний аналіз крові": [
+        {"name": "ЗАК (Загальний аналіз крові)", "term": "1 день", "price": "150 грн"},
+        {"name": "Гемоглобін", "term": "1 день", "price": "100 грн"},
+    ],
+    "Біохімія": [
+        {"name": "Глюкоза", "term": "1 день", "price": "120 грн"},
+        {"name": "АСТ", "term": "1 день", "price": "130 грн"},
+        {"name": "АЛТ", "term": "1 день", "price": "130 грн"},
+    ],
+    "Гормони": [
+        {"name": "ТСГ (Тиреотропний гормон)", "term": "2 дні", "price": "220 грн"},
+        {"name": "Т3 вільний", "term": "2 дні", "price": "240 грн"},
+        {"name": "Т4 вільний", "term": "2 дні", "price": "240 грн"},
+    ],
+    "Сеча": [
+        {"name": "Загальний аналіз сечі", "term": "1 день", "price": "100 грн"},
+        {"name": "Добова білок у сечі", "term": "2 дні", "price": "150 грн"},
+    ],
+    "Інфекції": [
+        {"name": "Гепатит B (HBsAg)", "term": "2 дні", "price": "300 грн"},
+        {"name": "Гепатит C (anti-HCV)", "term": "2 дні", "price": "300 грн"},
+    ]
+}
 
 def kb(items):
     markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -71,25 +62,22 @@ def start(m):
     uid = m.chat.id
     user_state[uid] = 'cat'
     user_selection[uid] = {'tests': []}
-    cats = get_categories()
-    if not cats:
-        return bot.send_message(uid, "❌ Не вдалося отримати список категорій. Спробуйте пізніше.")
-    user_selection[uid]['cats'] = cats
+    categories = list(CATEGORIES.keys())
+    user_selection[uid]['cats'] = categories
     bot.send_message(uid, "👋 Вітаємо у Telegram-боті лабораторії!")
     bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
-    bot.send_message(uid, "🔽 Оберіть категорію:", reply_markup=kb([c['name'] for c in cats]))
+    bot.send_message(uid, "🔽 Оберіть категорію:", reply_markup=kb(categories))
 
 @bot.message_handler(func=lambda m: user_state.get(m.chat.id) == 'cat')
 def cat(m):
     uid = m.chat.id
-    cat = next((c for c in user_selection[uid]['cats'] if c['name'] == m.text), None)
-    if not cat:
+    if m.text not in CATEGORIES:
         return bot.send_message(uid, "❗ Будь ласка, оберіть категорію зі списку.")
-    user_selection[uid]['cat'] = cat
-    tests = get_tests(cat['url'])
+    user_selection[uid]['cat'] = m.text
+    tests = CATEGORIES[m.text]
     user_selection[uid]['all_tests'] = tests
     user_state[uid] = 'test'
-    bot.send_message(uid, "🧪 Оберіть аналіз (по одному). Коли закінчите — натисніть 'Готово'", reply_markup=kb([t['name'] for t in tests[:20]] + ['Готово']))
+    bot.send_message(uid, "🧪 Оберіть аналіз (по одному). Коли закінчите — натисніть 'Готово'", reply_markup=kb([t['name'] for t in tests] + ['Готово']))
 
 @bot.message_handler(func=lambda m: user_state.get(m.chat.id) == 'test')
 def test(m):
@@ -124,20 +112,12 @@ def date(m):
     final = f"🗓 *Запис на {date_str}*\n{msg}"
     bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
     bot.send_message(uid, final, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
-
-    # Отправка админу
     user = m.from_user
-    admin_msg = (
-        f"📥 Нова заявка:\n"
-        f"👤 {user.first_name} (@{user.username or '—'})\n"
-        f"🗓 {date_str}\n"
-        f"{msg}"
-    )
+    admin_msg = f"📥 Нова заявка:\n👤 {user.first_name} (@{user.username or '—'})\n📅 {date_str}\n{msg}"
     bot.send_message(ADMIN_CHAT_ID, admin_msg)
-
-    # Очистка состояния
     user_state.pop(uid)
     user_selection.pop(uid)
 
 bot.polling()
+
 
