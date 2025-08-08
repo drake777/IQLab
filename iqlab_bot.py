@@ -33,13 +33,17 @@ def get_categories():
     soup = BeautifulSoup(r.text, 'html.parser')
     categories = []
 
-    # Рабочий парсинг категорий
-    for a in soup.select('a.catalog-section__link'):
-        name = a.text.strip()
-        url = 'https://iqlab.com.ua' + a['href']
-        categories.append({'name': name, 'url': url})
+    for link in soup.select('a.catalog-section__link'):
+        name = link.get_text(strip=True)
+        href = link.get('href')
+        if name and href:
+            categories.append({
+                'name': name,
+                'url': 'https://iqlab.com.ua' + href
+            })
 
     return categories
+
 
 def get_tests(url):
     r = requests.get(url)
