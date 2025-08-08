@@ -4,8 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
-TOKEN = 'YOUR_BOT_TOKEN'
-ADMIN_CHAT_ID = '123456789'  # Замените на свой Telegram ID
+TOKEN = '8207596553:AAH8wcoqshmnUwS1Zrq_rL3e_LnrLPnW6mg'
+ADMIN_CHAT_ID = '1002738907591'  # Замените на свой Telegram ID
 
 bot = telebot.TeleBot(TOKEN)
 
