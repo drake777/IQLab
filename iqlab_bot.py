@@ -32,12 +32,13 @@ def get_categories():
     r = requests.get(BASE_URL)
     soup = BeautifulSoup(r.text, 'html.parser')
     categories = []
-    for cat in soup.select('.catalog-section__item'):
-        title = cat.select_one('.catalog-section__title')
-        if title:
-            name = title.text.strip()
-            url = 'https://iqlab.com.ua' + title['href']
-            categories.append({'name': name, 'url': url})
+
+    # Рабочий парсинг категорий
+    for a in soup.select('a.catalog-section__link'):
+        name = a.text.strip()
+        url = 'https://iqlab.com.ua' + a['href']
+        categories.append({'name': name, 'url': url})
+
     return categories
 
 def get_tests(url):
@@ -67,6 +68,8 @@ def start(m):
     user_state[uid] = 'cat'
     user_selection[uid] = {'tests': []}
     cats = get_categories()
+    if not cats:
+        return bot.send_message(uid, "❌ Не вдалося отримати список категорій. Спробуйте пізніше.")
     user_selection[uid]['cats'] = cats
     bot.send_message(uid, "👋 Вітаємо у Telegram-боті лабораторії!")
     bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
@@ -117,11 +120,20 @@ def date(m):
     final = f"🗓 *Запис на {date_str}*\n{msg}"
     bot.send_message(uid, OFFICE_INFO, parse_mode="Markdown")
     bot.send_message(uid, final, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+
     # Отправка админу
     user = m.from_user
-    admin_msg = f"📥 Нова заявка:\n👤 {user.first_name} (@{user.username or '—'})\n📅 {date_str}\n{msg}"
+    admin_msg = (
+        f"📥 Нова заявка:\n"
+        f"👤 {user.first_name} (@{user.username or '—'})\n"
+        f"🗓 {date_str}\n"
+        f"{msg}"
+    )
     bot.send_message(ADMIN_CHAT_ID, admin_msg)
+
+    # Очистка состояния
     user_state.pop(uid)
     user_selection.pop(uid)
 
 bot.polling()
+
